@@ -108,7 +108,7 @@ productid_table = {p.id: p for p in products}
 # to start the flask app
 app = Flask(__name__)
 # to make sure that the front end can fetch the api
-CORS(app)
+
 app.debug = True
 app.config['SECRET_KEY'] = 'super-secret'
 # this is for the flask mail
