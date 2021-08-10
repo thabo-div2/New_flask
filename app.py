@@ -2,7 +2,7 @@
 # Flask End of Module Project
 # Point of Sale API
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS,cross_origin
 from flask_mail import Mail, Message
 from smtplib import SMTPRecipientsRefused
 import sqlite3
@@ -123,6 +123,7 @@ mail = Mail(app)
 
 # a route that register a new user
 @app.route('/user-registration/', methods=["POST"])
+@cross_origin()
 def user_registration():
     response = {}
 
