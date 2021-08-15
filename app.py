@@ -1,12 +1,10 @@
 # Class 2 Thabo Setsubi
 # Flask End of Module Project
 # Point of Sale API
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_mail import Mail, Message
 from smtplib import SMTPRecipientsRefused
-import cloudinary
-import cloudinary.uploader
 import sqlite3
 
 
@@ -56,7 +54,7 @@ def init_products_table():
                      "price INTEGER NOT NULL,"
                      "description TEXT NOT NULL,"
                      "type TEXT NOT NULL,"
-                     "image TEXT NOT NULL)")
+                     "quantity TEXT NOT NULL)")
         print("products table created successfully")
     return init_products_table
 
@@ -73,20 +71,6 @@ def init_admin_table():
                      "password TEXT NOT NULL)")
         print("admin table created successfully")
     return init_admin_table
-
-
-def upload_file():
-    app.logger.info('in upload route')
-    cloudinary.config(cloud_name='dfknxijvs', api_key='416325397653272',
-                      api_secret='rJEH19PReeReGIW2ZXqiEHUt6GA')
-    upload_result = None
-    if request.method == 'POST' or request.method == 'PUT':
-        product_image = request.form['product_image']
-        app.logger.info('%s file_to_upload', product_image)
-        if product_image:
-            upload_result = cloudinary.uploader.upload(product_image)
-            app.logger.info(upload_result)
-            return upload_result['url']
 
 
 # function that fetches the users and puts it into a list
@@ -253,37 +237,44 @@ def view_profile(user_id):
 def create_products():
     response = {}
 
-    try:
-        # using post method to create products
-        if request.method == "POST":
-            # the user fill in certain details about the product
-            name = request.form['name']
-            price = request.form['price']
-            desc = request.form['description']
-            product_type = request.form['type']
-            image = upload_file()
+    # using post method to create products
+    if request.method == "POST":
+        # the user fill in certain details about the product
+        name = request.form['name']
+        price = request.form['price']
+        desc = request.form['description']
+        product_type = request.form['type']
+        quantity = request.form['quantity']
 
-            # CONNECTING TO THE DATABASE
-            with sqlite3.connect("shoppers.db") as conn:
-                cursor = conn.cursor()
-                # using the insert statement to create a product
-                cursor.execute("INSERT INTO product("
-                               "name,"
-                               "price,"
-                               "description,"
-                               "type,"
-                               "image) VALUES (?, ?, ?, ?, ?)",
-                               (name, price, desc, product_type, image))
-                conn.commit()
-                # sending a message to the front end developer
-                response["status_code"] = 201
-                response["description"] = "Product created successfully"
-            return response
-    except ConnectionError as e:
-        return e
-    # using this generic statement to catch all the errors
-    except Exception as e:
-        return e
+        # CONNECTING TO THE DATABASE
+        with sqlite3.connect("shoppers.db") as conn:
+            cursor = conn.cursor()
+            # using the insert statement to create a product
+            cursor.execute("INSERT INTO product("
+                           "name,"
+                           "price,"
+                           "description,"
+                           "type,"
+                           "quantity) VALUES (?, ?, ?, ?, ?)",
+                           (name, price, desc, product_type, quantity))
+            conn.commit()
+            # sending a message to the front end developer
+            response["status_code"] = 201
+            response["description"] = "Product created successfully"
+        return response
+
+
+@app.route('/show-users/')
+def show_users():
+    response = {}
+    with sqlite3.connect("shoppers.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM user")
+
+        response["status_code"] = 200
+        response["description"] = "Displaying all users for the admin"
+        response['data'] = cursor.fetchall()
+    return jsonify(response)
 
 
 # a route to show all the products
@@ -317,6 +308,21 @@ def delete_products(product_id):
         # a message that gets sent to the front end
         response['status_code'] = 200
         response['message'] = "Product successfully deleted"
+
+    return response
+
+
+@app.route('/delete-profile/<int:user_id>')
+def delete_user(user_id):
+    response = {}
+
+    with sqlite3.connect("shoppers.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user WHERE id=" + str(user_id))
+        conn.commit()
+
+        response['status_code'] = 200
+        response['message'] = "User successfully deleted"
 
     return response
 
@@ -368,6 +374,47 @@ def edit_products(product_id):
                 return response
 
 
+@app.route('/edit-users/<int:user_id>', methods=['PUT'])
+def edit_users(user_id):
+    response = {}
+
+    if request.method == "PUT":
+        with sqlite3.connect("shoppers.db") as conn:
+            incoming_data = dict(request.json)
+
+            put_data = {}
+            if incoming_data.get("first_name") is not None:
+                put_data["first_name"] = incoming_data.get("first_name")
+                with sqlite3.connect("shoppers.db") as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE user SET first_name=? WHERE user_id=?", (put_data["first_name"], user_id))
+                    conn.commit()
+
+                    response['message'] = "Update was successful"
+                    response['status_code'] = 200
+                return response
+            if incoming_data.get("last_name") is not None:
+                put_data["last_name"] = incoming_data.get("last_name")
+                with sqlite3.connect("shoppers.db") as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE user SET last_name=? WHERE user_id=?", (put_data["last_name"], user_id))
+                    conn.commit()
+
+                    response['message'] = "Update was successful"
+                    response['status_code'] = 200
+                return response
+            if incoming_data.get("email") is not None:
+                put_data["email"] = incoming_data.get("email")
+                with sqlite3.connect("shoppers.db") as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE user SET email=? WHERE user_id=?", (put_data["email"], user_id))
+                    conn.commit()
+
+                    response['message'] = "Update was successful"
+                    response['status_code'] = 200
+                return response
+
+
 # a route that sends an email to the user
 @app.route('/send-email/<int:user_id>', methods=['GET', 'POST'])
 def send_email(user_id):
@@ -404,6 +451,24 @@ def login():
         with sqlite3.connect('shoppers.db') as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM user")
+            data = cursor.fetchall()
+            for i in data:
+                print(i)
+                if request.form['username'] == i[5] and request.form['password'] == i[6]:
+                    response['message'] = "Login successful"
+                    response['status_code'] = 200
+        return response
+
+
+@app.route('/admin-login')
+def admin_login():
+    response = {}
+    username = users
+    new = []
+    if request.method == "GET":
+        with sqlite3.connect('shoppers.db') as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM admin")
             data = cursor.fetchall()
             for i in data:
                 print(i)
