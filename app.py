@@ -1,10 +1,12 @@
 # Class 2 Thabo Setsubi
 # Flask End of Module Project
 # Point of Sale API
-from flask import Flask, request, jsonify
-from flask_cors import CORS,cross_origin
+from flask import Flask, request, jsonify, redirect
+from flask_cors import CORS
 from flask_mail import Mail, Message
 from smtplib import SMTPRecipientsRefused
+import cloudinary
+import cloudinary.uploader
 import sqlite3
 
 
@@ -24,39 +26,67 @@ class Products(object):
         self.type = product_type
 
 
-class Database:
-    def __init__(self):
-        self.conn = sqlite3.connect("shoppers.db")
-        self.cursor = self.conn.cursor()
+# class Database:
+#     def __init__(self):
+#         self.conn = sqlite3.connect("shoppers.db")
+#         self.cursor = self.conn.cursor()
 
-    # function that initialises the user table
-    def init_users_table(self):
-        conn = sqlite3.connect('shoppers.db')
-        print("Opened database successfully")
+# function that initialises the user table
+def init_users_table():
+    conn = sqlite3.connect('shoppers.db')
+    print("Opened database successfully")
 
-        conn.execute("CREATE TABLE IF NOT EXISTS user(user_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    conn.execute("CREATE TABLE IF NOT EXISTS user(user_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                 "first_name TEXT NOT NULL,"
+                 "last_name TEXT NOT NULL,"
+                 "address TEXT NOT NULL,"
+                 "email TEXT NOT NULL,"
+                 "username TEXT NOT NULL,"
+                 "password TEXT NOT NULL)")
+    print("user table created successfully")
+    conn.close()
+    return init_users_table
+
+
+# Initialising the products table
+def init_products_table():
+    with sqlite3.connect("shoppers.db") as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS product (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                     "name TEXT NOT NULL,"
+                     "price INTEGER NOT NULL,"
+                     "description TEXT NOT NULL,"
+                     "type TEXT NOT NULL,"
+                     "image TEXT NOT NULL)")
+        print("products table created successfully")
+    return init_products_table
+
+
+# Initialising the admin table
+def init_admin_table():
+    with sqlite3.connect("shoppers.db") as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS admin (id INTEGER PRIMARY KEY AUTOINCREMENT,"
                      "first_name TEXT NOT NULL,"
                      "last_name TEXT NOT NULL,"
                      "address TEXT NOT NULL,"
                      "email TEXT NOT NULL,"
                      "username TEXT NOT NULL,"
                      "password TEXT NOT NULL)")
-        print("user table created successfully")
-        conn.close()
-        return self.init_users_table
+        print("admin table created successfully")
+    return init_admin_table
 
-    # Initialising the products table
-    def init_products_table(self):
-        with sqlite3.connect("shoppers.db") as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS product (id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                         "name TEXT NOT NULL,"
-                         "price INTEGER NOT NULL,"
-                         "description TEXT NOT NULL,"
-                         "type TEXT NOT NULL,"
-                         "quantity INTEGER NOT NULL,"
-                         "total INTEGER NOT NULL)")
-            print("products table created successfully")
-        return self.init_products_table
+
+def upload_file():
+    app.logger.info('in upload route')
+    cloudinary.config(cloud_name='dfknxijvs', api_key='416325397653272',
+                      api_secret='rJEH19PReeReGIW2ZXqiEHUt6GA')
+    upload_result = None
+    if request.method == 'POST' or request.method == 'PUT':
+        product_image = request.form['product_image']
+        app.logger.info('%s file_to_upload', product_image)
+        if product_image:
+            upload_result = cloudinary.uploader.upload(product_image)
+            app.logger.info(upload_result)
+            return upload_result['url']
 
 
 # function that fetches the users and puts it into a list
@@ -88,27 +118,33 @@ def fetch_products():
         return new_item
 
 
+def fetch_admin():
+    with sqlite3.connect('shoppers.db') as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM admin")
+        shoppers = cursor.fetchall()
+
+        new_data = []
+
+        for data in shoppers:
+            print(data)
+            new_data.append(User(data[0], data[5], data[6]))
+    return new_data
+
+
 # calling the functions
-Database()
+init_users_table()
+init_admin_table()
+init_products_table()
 users = fetch_users()
 products = fetch_products()
-
-username_table = {u.username: u for u in users}
-userid_table = {u.id: u for u in users}
-password_table = {u.password: u for u in users}
-
-print(username_table)
-print(userid_table)
-print(password_table)
-
-product_table = {p.name: p for p in products}
-productid_table = {p.id: p for p in products}
+fetch_admin()
 
 
 # to start the flask app
 app = Flask(__name__)
 # to make sure that the front end can fetch the api
-
+CORS(app)
 app.debug = True
 app.config['SECRET_KEY'] = 'super-secret'
 # this is for the flask mail
@@ -123,7 +159,6 @@ mail = Mail(app)
 
 # a route that register a new user
 @app.route('/user-registration/', methods=["POST"])
-@cross_origin()
 def user_registration():
     response = {}
 
@@ -163,6 +198,37 @@ def user_registration():
         return response
 
 
+@app.route('/admin-registration/', methods=['POST'])
+def admin_registration():
+    response = {}
+    if request.method == "POST":
+        first_name = request.form['first_name']
+        last_name = request.form['last_name']
+        email = request.form['email']
+        address = request.form['address']
+        username = request.form['username']
+        password = request.form['password']
+
+        with sqlite3.connect("shoppers.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO admin("
+                           "first_name,"
+                           "last_name,"
+                           "address,"
+                           "email,"
+                           "username,"
+                           "password) VALUES(?, ?, ?, ?, ?, ?)",
+                           (first_name, last_name, address, email, username, password))
+            conn.commit()
+            response["message"] = " admin registered successfully"
+            response["status_code"] = 201
+            # email will be sent to users email
+            msg = Message("Welcome new user!!!", sender="lifechoiceslotto147@gmail.com", recipients=[email])
+            msg.body = "You have successfully registered an account. Welcome " + first_name
+            mail.send(msg)
+        return response
+
+
 # a route to view a single users profile
 @app.route('/view-profile/<int:user_id>')
 def view_profile(user_id):
@@ -195,8 +261,7 @@ def create_products():
             price = request.form['price']
             desc = request.form['description']
             product_type = request.form['type']
-            quantity = request.form['quantity']
-            total = int(price) * int(quantity)
+            image = upload_file()
 
             # CONNECTING TO THE DATABASE
             with sqlite3.connect("shoppers.db") as conn:
@@ -207,9 +272,8 @@ def create_products():
                                "price,"
                                "description,"
                                "type,"
-                               "quantity,"
-                               "total) VALUES (?, ?, ?, ?, ?, ?)",
-                               (name, price, desc, product_type, quantity, total))
+                               "image) VALUES (?, ?, ?, ?, ?)",
+                               (name, price, desc, product_type, image))
                 conn.commit()
                 # sending a message to the front end developer
                 response["status_code"] = 201
